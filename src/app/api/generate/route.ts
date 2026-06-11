@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { FeatureKey } from "@/lib/features";
 import { getFeatureConfig } from "@/lib/features";
 import { buildMarkdownDocument } from "@/lib/markdown";
+import { formatNaverKeywordInsights, getNaverKeywordInsights } from "@/lib/naver";
 import { renderPrompt, systemPrompts, userPromptTemplates } from "@/lib/prompts";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
@@ -84,7 +85,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "지원하지 않는 기능입니다." }, { status: 400 });
     }
 
-    const userPrompt = renderPrompt(userPromptTemplates[body.feature], body.inputs);
+    let naverWarning: string | null = null;
+    let naverData = "네이버 API 수집 데이터 없음";
+    if (body.feature === "keyword") {
+      const naverInsights = await getNaverKeywordInsights(body.inputs);
+      naverWarning = naverInsights.warning || null;
+      naverData = formatNaverKeywordInsights(naverInsights);
+    }
+
+    const promptInputs = { ...body.inputs, naverData };
+    const userPrompt = renderPrompt(userPromptTemplates[body.feature], promptInputs);
     const aiResponse = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -148,6 +158,7 @@ export async function POST(request: Request) {
       saveWarning: savedId
         ? null
         : "결과 생성은 완료됐지만 Supabase 저장은 실패했습니다. 환경변수와 테이블을 확인해주세요.",
+      naverWarning,
     });
   } catch (error) {
     console.error(error);

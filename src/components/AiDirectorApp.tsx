@@ -12,6 +12,7 @@ type GenerateResponse = {
   markdown?: string;
   savedId?: string | null;
   saveWarning?: string | null;
+  naverWarning?: string | null;
   error?: string;
 };
 
@@ -60,7 +61,11 @@ export function AiDirectorApp() {
 
       setMarkdown(data.markdown || "");
       setSavedId(data.savedId || null);
-      setMessage(data.saveWarning || "결과 생성과 저장이 완료됐습니다.");
+      setMessage(
+        [data.naverWarning, data.saveWarning || "결과 생성과 저장이 완료됐습니다."]
+          .filter(Boolean)
+          .join(" "),
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.");
     } finally {

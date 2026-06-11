@@ -12,6 +12,13 @@
 - `/report` 월간 보고서 작성
 - `/proposal` 영업 제안서 작성
 
+`/keyword`는 선택적으로 네이버 공식 API 데이터를 함께 사용합니다.
+
+- 네이버 블로그 검색
+- 네이버 카페글 검색
+- 네이버 지역 검색
+- 네이버 데이터랩 검색어 트렌드
+
 ## 구조
 
 ```text
@@ -45,6 +52,8 @@ OPENAI_MODEL=gpt-4.1-mini
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+NAVER_CLIENT_ID=your-naver-client-id
+NAVER_CLIENT_SECRET=your-naver-client-secret
 ```
 
 ## Supabase 설정

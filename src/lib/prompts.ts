@@ -30,6 +30,9 @@ export const userPromptTemplates: Record<FeatureKey, string> = {
 - 타깃 고객: {{targetCustomer}}
 - 경쟁사명: {{competitor}}
 
+[네이버 실시간 API 참고 데이터]
+{{naverData}}
+
 [출력 요구사항]
 1. 메인 키워드 10개
 2. 서브 키워드 30개
