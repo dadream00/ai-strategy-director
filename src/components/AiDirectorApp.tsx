@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Clipboard, Download, Loader2, Save } from "lucide-react";
+import { Check, Clipboard, Download, Loader2, Pencil, Save, Trash2, X } from "lucide-react";
 
 import type { FeatureKey } from "@/lib/features";
 import { featureConfigs, featureIcons, getFeatureConfig } from "@/lib/features";
@@ -16,6 +16,177 @@ type GenerateResponse = {
   error?: string;
 };
 
+type MarkdownBlock =
+  | { type: "heading"; level: number; text: string; key: string }
+  | { type: "paragraph"; text: string; key: string }
+  | { type: "quote"; text: string; key: string }
+  | { type: "list"; items: string[]; key: string }
+  | { type: "table"; rows: string[][]; key: string }
+  | { type: "hr"; key: string };
+
+function normalizeMarkdown(value: string) {
+  return value
+    .replace(/^```(?:markdown)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function parseTableLine(line: string) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function isTableDivider(line: string) {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
+  const lines = normalizeMarkdown(markdown).split(/\r?\n/);
+  const blocks: MarkdownBlock[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index].trim();
+
+    if (!line) {
+      index += 1;
+      continue;
+    }
+
+    if (/^-{3,}$/.test(line)) {
+      blocks.push({ type: "hr", key: `hr-${index}` });
+      index += 1;
+      continue;
+    }
+
+    const heading = /^(#{1,4})\s+(.+)$/.exec(line);
+    if (heading) {
+      blocks.push({
+        type: "heading",
+        level: heading[1].length,
+        text: heading[2],
+        key: `heading-${index}`,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (line.startsWith(">")) {
+      blocks.push({ type: "quote", text: line.replace(/^>\s?/, ""), key: `quote-${index}` });
+      index += 1;
+      continue;
+    }
+
+    if (line.includes("|") && lines[index + 1] && isTableDivider(lines[index + 1])) {
+      const rows = [parseTableLine(line)];
+      index += 2;
+      while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
+        rows.push(parseTableLine(lines[index]));
+        index += 1;
+      }
+      blocks.push({ type: "table", rows, key: `table-${index}` });
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length) {
+        const itemLine = lines[index].trim();
+        if (!/^[-*]\s+/.test(itemLine) && !/^\d+\.\s+/.test(itemLine)) break;
+        items.push(itemLine.replace(/^[-*]\s+/, "").replace(/^\d+\.\s+/, ""));
+        index += 1;
+      }
+      blocks.push({ type: "list", items, key: `list-${index}` });
+      continue;
+    }
+
+    const paragraph: string[] = [line];
+    index += 1;
+    while (index < lines.length && lines[index].trim()) {
+      const next = lines[index].trim();
+      if (
+        /^#{1,4}\s+/.test(next) ||
+        /^-{3,}$/.test(next) ||
+        next.startsWith(">") ||
+        /^[-*]\s+/.test(next) ||
+        /^\d+\.\s+/.test(next) ||
+        (next.includes("|") && lines[index + 1] && isTableDivider(lines[index + 1]))
+      ) {
+        break;
+      }
+      paragraph.push(next);
+      index += 1;
+    }
+    blocks.push({ type: "paragraph", text: paragraph.join(" "), key: `paragraph-${index}` });
+  }
+
+  return blocks;
+}
+
+function MarkdownPreview({ markdown }: { markdown: string }) {
+  const blocks = useMemo(() => parseMarkdownBlocks(markdown), [markdown]);
+
+  if (!markdown) {
+    return <div className="markdown-preview empty">결과 생성 후 보기 좋은 문서 형태로 표시됩니다.</div>;
+  }
+
+  return (
+    <article className="markdown-preview">
+      {blocks.map((block) => {
+        if (block.type === "heading") {
+          const Tag = block.level === 1 ? "h1" : block.level === 2 ? "h2" : "h3";
+          return <Tag key={block.key}>{block.text}</Tag>;
+        }
+        if (block.type === "quote") {
+          return <blockquote key={block.key}>{block.text}</blockquote>;
+        }
+        if (block.type === "list") {
+          return (
+            <ul key={block.key}>
+              {block.items.map((item, itemIndex) => (
+                <li key={`${block.key}-${itemIndex}`}>{item}</li>
+              ))}
+            </ul>
+          );
+        }
+        if (block.type === "table") {
+          const [head, ...body] = block.rows;
+          return (
+            <div className="table-scroll" key={block.key}>
+              <table>
+                <thead>
+                  <tr>
+                    {head.map((cell, cellIndex) => (
+                      <th key={`${block.key}-h-${cellIndex}`}>{cell}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {body.map((row, rowIndex) => (
+                    <tr key={`${block.key}-r-${rowIndex}`}>
+                      {row.map((cell, cellIndex) => (
+                        <td key={`${block.key}-c-${rowIndex}-${cellIndex}`}>{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        if (block.type === "hr") {
+          return <hr key={block.key} />;
+        }
+        return <p key={block.key}>{block.text}</p>;
+      })}
+    </article>
+  );
+}
+
 export function AiDirectorApp() {
   const [feature, setFeature] = useState<FeatureKey>("keyword");
   const [inputs, setInputs] = useState<Record<string, string>>({});
@@ -23,6 +194,9 @@ export function AiDirectorApp() {
   const [savedId, setSavedId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftMarkdown, setDraftMarkdown] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const config = useMemo(() => getFeatureConfig(feature), [feature]);
 
@@ -60,7 +234,9 @@ export function AiDirectorApp() {
       }
 
       setMarkdown(data.markdown || "");
+      setDraftMarkdown(data.markdown || "");
       setSavedId(data.savedId || null);
+      setIsEditing(false);
       setMessage(
         [data.naverWarning, data.saveWarning || "결과 생성과 저장이 완료됐습니다."]
           .filter(Boolean)
@@ -89,6 +265,65 @@ export function AiDirectorApp() {
     if (!markdown) return;
     await navigator.clipboard.writeText(markdown);
     setMessage("결과물을 클립보드에 복사했습니다.");
+  }
+
+  function startEdit() {
+    setDraftMarkdown(markdown);
+    setIsEditing(true);
+    setMessage("결과를 직접 수정할 수 있습니다. 저장하면 화면 결과가 갱신됩니다.");
+  }
+
+  async function saveEdit() {
+    const nextMarkdown = draftMarkdown.trim();
+    if (!nextMarkdown) {
+      setMessage("저장할 결과물이 비어 있습니다.");
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      if (savedId) {
+        const response = await fetch(`/api/outputs/${savedId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ output_markdown: nextMarkdown }),
+        });
+        if (!response.ok) {
+          const data = (await response.json()) as { error?: string };
+          throw new Error(data.error || "Supabase 저장본 수정에 실패했습니다.");
+        }
+      }
+      setMarkdown(nextMarkdown);
+      setIsEditing(false);
+      setMessage(savedId ? "수정한 결과를 저장했습니다." : "수정한 결과를 화면에 반영했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "수정 저장 중 문제가 발생했습니다.");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }
+
+  async function deleteResult() {
+    if (!markdown) return;
+    const shouldDelete = window.confirm("현재 결과물을 삭제할까요?");
+    if (!shouldDelete) return;
+
+    try {
+      if (savedId) {
+        const response = await fetch(`/api/outputs/${savedId}`, { method: "DELETE" });
+        if (!response.ok) {
+          const data = (await response.json()) as { error?: string };
+          throw new Error(data.error || "Supabase 저장본 삭제에 실패했습니다.");
+        }
+      }
+      setMarkdown("");
+      setDraftMarkdown("");
+      setSavedId(null);
+      setIsEditing(false);
+      setMessage("결과물을 삭제했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "삭제 중 문제가 발생했습니다.");
+    }
   }
 
   return (
@@ -176,19 +411,42 @@ export function AiDirectorApp() {
                     {savedId && <span>Supabase 저장 ID: {savedId}</span>}
                   </div>
                   <div className="actions">
+                    {isEditing ? (
+                      <>
+                        <button disabled={isSavingEdit} onClick={saveEdit} type="button" title="수정 저장">
+                          {isSavingEdit ? <Loader2 className="spin" size={17} /> : <Check size={17} />}
+                        </button>
+                        <button disabled={isSavingEdit} onClick={() => setIsEditing(false)} type="button" title="취소">
+                          <X size={17} />
+                        </button>
+                      </>
+                    ) : (
+                      <button disabled={!markdown} onClick={startEdit} type="button" title="수정">
+                        <Pencil size={17} />
+                      </button>
+                    )}
                     <button disabled={!markdown} onClick={copyMarkdown} type="button" title="복사">
                       <Clipboard size={17} />
                     </button>
                     <button disabled={!markdown} onClick={downloadMarkdown} type="button" title="다운로드">
                       <Download size={17} />
                     </button>
+                    <button disabled={!markdown || isEditing} onClick={deleteResult} type="button" title="삭제">
+                      <Trash2 size={17} />
+                    </button>
                   </div>
                 </div>
 
                 {message && <div className="notice">{message}</div>}
-                <pre className={markdown ? "markdown-result" : "markdown-result empty"}>
-                  {markdown || "결과 생성 후 Markdown 결과물이 여기에 표시됩니다."}
-                </pre>
+                {isEditing ? (
+                  <textarea
+                    className="markdown-editor"
+                    onChange={(event) => setDraftMarkdown(event.target.value)}
+                    value={draftMarkdown}
+                  />
+                ) : (
+                  <MarkdownPreview markdown={markdown} />
+                )}
               </section>
             </div>
           </>
