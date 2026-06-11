@@ -16,15 +16,39 @@
 
 ## 2. GitHub
 
+`agency-os`는 아래 저장소를 사용 중입니다.
+
+```text
+https://github.com/dadream00/Sunhan_marketing.git
+```
+
+이 앱은 기존 저장소와 연결하지 않습니다. 같은 GitHub 계정을 사용하더라도 새 독립 저장소를 만듭니다.
+
+권장 새 저장소:
+
+```text
+https://github.com/dadream00/ai-strategy-director.git
+```
+
 GitHub에서 새 독립 저장소를 만든 뒤 아래 명령을 실행합니다.
 
 ```powershell
-git remote add origin https://github.com/YOUR_ACCOUNT/ai-strategy-director.git
+git remote add origin https://github.com/dadream00/ai-strategy-director.git
 git branch -M main
 git push -u origin main
 ```
 
 ## 3. Vercel
+
+`agency-os`는 Vercel 프로젝트명으로 `sunhan-marketing`을 사용하도록 기록되어 있습니다.
+
+이 앱은 기존 Vercel 프로젝트와 연결하지 않습니다. 새 Vercel 프로젝트를 만들고 GitHub의 새 저장소만 연결합니다.
+
+권장 새 Vercel 프로젝트명:
+
+```text
+ai-strategy-director
+```
 
 Vercel에서 새 프로젝트를 만들고 GitHub 저장소를 연결합니다.
 
