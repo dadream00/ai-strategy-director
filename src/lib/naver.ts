@@ -33,6 +33,7 @@ type NaverTrendResponse = {
 export type NaverKeywordInsights = {
   enabled: boolean;
   warning?: string;
+  failedSources?: string[];
   seedKeywords: string[];
   search: {
     blog: NaverSearchResponse | null;
@@ -187,46 +188,67 @@ export async function getNaverKeywordInsights(
     };
   }
 
-  try {
-    const primaryQuery = seedKeywords[0] || inputs.service || inputs.industry || "";
-    const [blog, cafe, local, trend] = await Promise.all([
-      fetchNaverSearch({
-        endpoint: NAVER_SEARCH_ENDPOINTS.blog,
-        query: primaryQuery,
-        clientId,
-        clientSecret,
-      }),
-      fetchNaverSearch({
-        endpoint: NAVER_SEARCH_ENDPOINTS.cafe,
-        query: primaryQuery,
-        clientId,
-        clientSecret,
-      }),
-      fetchNaverSearch({
-        endpoint: NAVER_SEARCH_ENDPOINTS.local,
-        query: primaryQuery,
-        clientId,
-        clientSecret,
-      }),
-      fetchNaverTrend({ seedKeywords, clientId, clientSecret }),
-    ]);
+  const primaryQuery = seedKeywords[0] || inputs.service || inputs.industry || "";
+  const requests = {
+    blog: fetchNaverSearch({
+      endpoint: NAVER_SEARCH_ENDPOINTS.blog,
+      query: primaryQuery,
+      clientId,
+      clientSecret,
+      display: 10,
+    }),
+    cafe: fetchNaverSearch({
+      endpoint: NAVER_SEARCH_ENDPOINTS.cafe,
+      query: primaryQuery,
+      clientId,
+      clientSecret,
+      display: 10,
+    }),
+    local: fetchNaverSearch({
+      endpoint: NAVER_SEARCH_ENDPOINTS.local,
+      query: primaryQuery,
+      clientId,
+      clientSecret,
+      display: 10,
+    }),
+    trend: fetchNaverTrend({ seedKeywords, clientId, clientSecret }),
+  };
 
-    return {
-      enabled: true,
-      seedKeywords,
-      search: { blog, cafe, local },
-      trend,
-    };
-  } catch (error) {
-    console.error(error);
-    return {
-      enabled: false,
-      warning: "네이버 API 호출에 실패해 네이버 실시간 데이터 없이 생성했습니다. 네이버 API 권한과 키를 확인해주세요.",
-      seedKeywords,
-      search: { blog: null, cafe: null, local: null },
-      trend: null,
-    };
+  const [blogResult, cafeResult, localResult, trendResult] = await Promise.allSettled([
+    requests.blog,
+    requests.cafe,
+    requests.local,
+    requests.trend,
+  ]);
+
+  const failedSources: string[] = [];
+
+  function getSettledValue<T>(label: string, result: PromiseSettledResult<T>) {
+    if (result.status === "fulfilled") {
+      return result.value;
+    }
+    console.error(`${label} Naver API failed`, result.reason);
+    failedSources.push(label);
+    return null;
   }
+
+  const blog = getSettledValue("블로그", blogResult);
+  const cafe = getSettledValue("카페글", cafeResult);
+  const local = getSettledValue("지역", localResult);
+  const trend = getSettledValue("데이터랩", trendResult);
+  const hasAnyData = Boolean(blog || cafe || local || trend);
+
+  return {
+    enabled: hasAnyData,
+    warning:
+      failedSources.length > 0
+        ? `네이버 API 일부 항목 수집에 실패했습니다: ${failedSources.join(", ")}. 수집된 데이터만 반영했습니다.`
+        : undefined,
+    failedSources,
+    seedKeywords,
+    search: { blog, cafe, local },
+    trend,
+  };
 }
 
 function summarizeSearch(label: string, response: NaverSearchResponse | null) {
@@ -268,8 +290,14 @@ function summarizeTrend(response: NaverTrendResponse | null) {
 
 export function formatNaverKeywordInsights(insights: NaverKeywordInsights) {
   const warning = insights.warning ? `> ${insights.warning}\n\n` : "";
+  const status =
+    insights.failedSources && insights.failedSources.length > 0
+      ? `### 수집 상태\n- 성공: ${["블로그", "카페글", "지역", "데이터랩"].filter((label) => !insights.failedSources?.includes(label)).join(", ") || "없음"}\n- 실패: ${insights.failedSources.join(", ")}\n\n`
+      : "### 수집 상태\n- 네이버 API 수집 완료\n\n";
 
   return `${warning}## 네이버 API 수집 데이터
+
+${status}
 
 ### 분석 시드 키워드
 ${insights.seedKeywords.map((keyword) => `- ${keyword}`).join("\n") || "- 없음"}
