@@ -54,7 +54,13 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 NAVER_CLIENT_ID=your-naver-client-id
 NAVER_CLIENT_SECRET=your-naver-client-secret
+NAVER_SEARCH_CLIENT_ID=your-naver-search-client-id
+NAVER_SEARCH_CLIENT_SECRET=your-naver-search-client-secret
+NAVER_DATALAB_CLIENT_ID=your-naver-datalab-client-id
+NAVER_DATALAB_CLIENT_SECRET=your-naver-datalab-client-secret
 ```
+
+`NAVER_CLIENT_ID`와 `NAVER_CLIENT_SECRET` 하나에 `검색`과 `데이터랩(검색어트렌드)` 권한이 모두 연결되어 있으면 `NAVER_SEARCH_*`, `NAVER_DATALAB_*`는 비워도 됩니다.
 
 ## Supabase 설정
 

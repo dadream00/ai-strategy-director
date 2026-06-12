@@ -61,6 +61,32 @@ const NAVER_SEARCH_ENDPOINTS = {
   local: "https://openapi.naver.com/v1/search/local.json",
 };
 
+function getNaverCredentials(scope: "search" | "datalab") {
+  if (scope === "search") {
+    return {
+      clientId:
+        process.env.NAVER_SEARCH_CLIENT_ID?.trim() ||
+        process.env.NAVER_CLIENT_ID?.trim() ||
+        "",
+      clientSecret:
+        process.env.NAVER_SEARCH_CLIENT_SECRET?.trim() ||
+        process.env.NAVER_CLIENT_SECRET?.trim() ||
+        "",
+    };
+  }
+
+  return {
+    clientId:
+      process.env.NAVER_DATALAB_CLIENT_ID?.trim() ||
+      process.env.NAVER_CLIENT_ID?.trim() ||
+      "",
+    clientSecret:
+      process.env.NAVER_DATALAB_CLIENT_SECRET?.trim() ||
+      process.env.NAVER_CLIENT_SECRET?.trim() ||
+      "",
+  };
+}
+
 class NaverApiError extends Error {
   constructor(
     public source: string,
@@ -207,14 +233,18 @@ async function fetchNaverTrend({
 export async function getNaverKeywordInsights(
   inputs: Record<string, string>,
 ): Promise<NaverKeywordInsights> {
-  const clientId = process.env.NAVER_CLIENT_ID?.trim();
-  const clientSecret = process.env.NAVER_CLIENT_SECRET?.trim();
+  const searchCredentials = getNaverCredentials("search");
+  const datalabCredentials = getNaverCredentials("datalab");
   const seedKeywords = makeSeedKeywords(inputs);
 
-  if (!clientId || !clientSecret) {
+  if (
+    (!searchCredentials.clientId || !searchCredentials.clientSecret) &&
+    (!datalabCredentials.clientId || !datalabCredentials.clientSecret)
+  ) {
     return {
       enabled: false,
-      warning: "NAVER_CLIENT_ID 또는 NAVER_CLIENT_SECRET이 없어 네이버 실시간 데이터 없이 생성했습니다.",
+      warning:
+        "NAVER_CLIENT_ID/NAVER_CLIENT_SECRET 또는 NAVER_SEARCH/NAVER_DATALAB 환경변수가 없어 네이버 실시간 데이터 없이 생성했습니다.",
       seedKeywords,
       search: { blog: null, cafe: null, local: null },
       trend: null,
@@ -226,25 +256,29 @@ export async function getNaverKeywordInsights(
     blog: fetchNaverSearch({
       endpoint: NAVER_SEARCH_ENDPOINTS.blog,
       query: primaryQuery,
-      clientId,
-      clientSecret,
+      clientId: searchCredentials.clientId,
+      clientSecret: searchCredentials.clientSecret,
       display: 10,
     }),
     cafe: fetchNaverSearch({
       endpoint: NAVER_SEARCH_ENDPOINTS.cafe,
       query: primaryQuery,
-      clientId,
-      clientSecret,
+      clientId: searchCredentials.clientId,
+      clientSecret: searchCredentials.clientSecret,
       display: 10,
     }),
     local: fetchNaverSearch({
       endpoint: NAVER_SEARCH_ENDPOINTS.local,
       query: primaryQuery,
-      clientId,
-      clientSecret,
+      clientId: searchCredentials.clientId,
+      clientSecret: searchCredentials.clientSecret,
       display: 10,
     }),
-    trend: fetchNaverTrend({ seedKeywords, clientId, clientSecret }),
+    trend: fetchNaverTrend({
+      seedKeywords,
+      clientId: datalabCredentials.clientId,
+      clientSecret: datalabCredentials.clientSecret,
+    }),
   };
 
   const [blogResult, cafeResult, localResult, trendResult] = await Promise.allSettled([
@@ -284,7 +318,7 @@ export async function getNaverKeywordInsights(
     enabled: hasAnyData,
     warning:
       failedSources.length > 0
-        ? `네이버 API 일부 항목 수집에 실패했습니다: ${failures.map((failure) => `${failure.label}(${failure.detail})`).join(", ")}. 수집된 데이터만 반영했습니다.`
+        ? `네이버 API 일부 항목 수집에 실패했습니다: ${failures.map((failure) => `${failure.label}(${failure.detail})`).join(", ")}. 401 Scope Status Invalid는 보통 네이버 개발자센터 앱의 API 설정에 '검색' 권한이 없거나 검색 전용 Client ID/Secret이 아닌 경우 발생합니다.`
         : undefined,
     failedSources,
     failures,
