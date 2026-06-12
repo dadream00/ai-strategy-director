@@ -28,6 +28,8 @@ function normalizeMarkdown(value: string) {
   return value
     .replace(/^```(?:markdown)?\s*/i, "")
     .replace(/\s*```$/i, "")
+    .replace(/^\s*`{2,}markdown\s*$/gim, "")
+    .replace(/^\s*`{2,}\s*$/gim, "")
     .trim();
 }
 
