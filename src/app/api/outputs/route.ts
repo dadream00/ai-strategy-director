@@ -4,14 +4,22 @@ import { getSupabaseAdmin } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const url = new URL(request.url);
+    const feature = url.searchParams.get("feature");
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
+    let query = supabase
       .from("ai_director_outputs")
-      .select("id, feature, title, primary_input, created_at")
+      .select("id, feature, title, primary_input, inputs, created_at")
       .order("created_at", { ascending: false })
       .limit(30);
+
+    if (feature) {
+      query = query.eq("feature", feature);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       throw error;

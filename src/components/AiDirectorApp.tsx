@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Check, Clipboard, Download, Loader2, Pencil, Save, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, Clipboard, Download, History, Loader2, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
 
 import type { FeatureKey } from "@/lib/features";
 import { featureConfigs, featureIcons, getFeatureConfig } from "@/lib/features";
@@ -13,6 +13,25 @@ type GenerateResponse = {
   savedId?: string | null;
   saveWarning?: string | null;
   naverWarning?: string | null;
+  error?: string;
+};
+
+type OutputSummary = {
+  id: string;
+  feature: FeatureKey;
+  title: string;
+  primary_input: string | null;
+  inputs: Record<string, string> | null;
+  created_at: string;
+};
+
+type OutputDetailResponse = {
+  output?: {
+    id: string;
+    feature: FeatureKey;
+    inputs: Record<string, string>;
+    output_markdown: string;
+  };
   error?: string;
 };
 
@@ -199,8 +218,35 @@ export function AiDirectorApp() {
   const [isEditing, setIsEditing] = useState(false);
   const [draftMarkdown, setDraftMarkdown] = useState("");
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [historyItems, setHistoryItems] = useState<OutputSummary[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
 
   const config = useMemo(() => getFeatureConfig(feature), [feature]);
+
+  const loadHistory = useCallback(async (nextFeature: FeatureKey) => {
+    setIsHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const response = await fetch(`/api/outputs?feature=${nextFeature}`);
+      const data = (await response.json()) as { outputs?: OutputSummary[]; error?: string };
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "저장 기록을 불러오지 못했습니다.");
+      }
+      setHistoryItems(data.outputs || []);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : "저장 기록을 불러오지 못했습니다.");
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadHistory(feature);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [feature, loadHistory]);
 
   function updateInput(name: string, value: string) {
     setInputs((current) => ({ ...current, [name]: value }));
@@ -244,6 +290,7 @@ export function AiDirectorApp() {
           .filter(Boolean)
           .join(" "),
       );
+      void loadHistory(feature);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.");
     } finally {
@@ -298,6 +345,7 @@ export function AiDirectorApp() {
       setMarkdown(nextMarkdown);
       setIsEditing(false);
       setMessage(savedId ? "수정한 결과를 저장했습니다." : "수정한 결과를 화면에 반영했습니다.");
+      void loadHistory(feature);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "수정 저장 중 문제가 발생했습니다.");
     } finally {
@@ -323,9 +371,45 @@ export function AiDirectorApp() {
       setSavedId(null);
       setIsEditing(false);
       setMessage("결과물을 삭제했습니다.");
+      void loadHistory(feature);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "삭제 중 문제가 발생했습니다.");
     }
+  }
+
+  async function loadSavedOutput(id: string) {
+    setMessage("");
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/outputs/${id}`);
+      const data = (await response.json()) as OutputDetailResponse;
+      if (!response.ok || data.error || !data.output) {
+        throw new Error(data.error || "저장된 결과물을 불러오지 못했습니다.");
+      }
+
+      setFeature(data.output.feature);
+      setInputs(data.output.inputs || {});
+      setMarkdown(data.output.output_markdown || "");
+      setDraftMarkdown(data.output.output_markdown || "");
+      setSavedId(data.output.id);
+      setIsEditing(false);
+      setMessage("저장된 결과를 불러왔습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "저장된 결과물을 불러오지 못했습니다.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function formatHistoryDate(value: string) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("ko-KR", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date);
   }
 
   return (
@@ -404,6 +488,47 @@ export function AiDirectorApp() {
                     </label>
                   ))}
                 </div>
+
+                {feature === "keyword" && (
+                  <section className="history-panel">
+                    <div className="history-head">
+                      <h3>
+                        <History size={16} />
+                        최근 키워드 리서치
+                      </h3>
+                      <button
+                        disabled={isHistoryLoading}
+                        onClick={() => void loadHistory(feature)}
+                        title="새로고침"
+                        type="button"
+                      >
+                        <RefreshCw className={isHistoryLoading ? "spin" : ""} size={15} />
+                      </button>
+                    </div>
+                    {historyError && <p className="history-error">{historyError}</p>}
+                    <div className="history-list">
+                      {historyItems.length === 0 && !isHistoryLoading ? (
+                        <p className="history-empty">아직 저장된 키워드 리서치가 없습니다.</p>
+                      ) : (
+                        historyItems.map((item) => (
+                          <button
+                            className={item.id === savedId ? "history-item active" : "history-item"}
+                            key={item.id}
+                            onClick={() => void loadSavedOutput(item.id)}
+                            type="button"
+                          >
+                            <strong>{item.primary_input || item.title}</strong>
+                            <span>
+                              {item.inputs?.industry || "업종 미입력"}
+                              {item.inputs?.region ? ` · ${item.inputs.region}` : ""}
+                            </span>
+                            <small>{formatHistoryDate(item.created_at)}</small>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </section>
+                )}
               </section>
 
               <section className="panel output-panel">
