@@ -30,10 +30,22 @@ type NaverTrendResponse = {
   results?: NaverTrendResult[];
 };
 
+type NaverApiErrorBody = {
+  errorCode?: string;
+  errorMessage?: string;
+  message?: string;
+};
+
+type NaverSourceFailure = {
+  label: string;
+  detail: string;
+};
+
 export type NaverKeywordInsights = {
   enabled: boolean;
   warning?: string;
   failedSources?: string[];
+  failures?: NaverSourceFailure[];
   seedKeywords: string[];
   search: {
     blog: NaverSearchResponse | null;
@@ -48,6 +60,16 @@ const NAVER_SEARCH_ENDPOINTS = {
   cafe: "https://openapi.naver.com/v1/search/cafearticle.json",
   local: "https://openapi.naver.com/v1/search/local.json",
 };
+
+class NaverApiError extends Error {
+  constructor(
+    public source: string,
+    public status: number,
+    public detail: string,
+  ) {
+    super(`${source} failed: ${status} ${detail}`);
+  }
+}
 
 function stripHtml(value = "") {
   return value
@@ -91,6 +113,15 @@ function getToday() {
   return new Date().toISOString().slice(0, 10);
 }
 
+async function getNaverErrorDetail(response: Response) {
+  try {
+    const data = (await response.json()) as NaverApiErrorBody;
+    return data.errorMessage || data.message || data.errorCode || response.statusText;
+  } catch {
+    return response.statusText || "알 수 없는 오류";
+  }
+}
+
 async function fetchNaverSearch({
   endpoint,
   query,
@@ -118,7 +149,8 @@ async function fetchNaverSearch({
   });
 
   if (!response.ok) {
-    throw new Error(`Naver search failed: ${response.status}`);
+    const detail = await getNaverErrorDetail(response);
+    throw new NaverApiError("Naver search", response.status, detail);
   }
 
   const data = (await response.json()) as NaverSearchResponse;
@@ -165,7 +197,8 @@ async function fetchNaverTrend({
   });
 
   if (!response.ok) {
-    throw new Error(`Naver trend failed: ${response.status}`);
+    const detail = await getNaverErrorDetail(response);
+    throw new NaverApiError("Naver trend", response.status, detail);
   }
 
   return (await response.json()) as NaverTrendResponse;
@@ -222,6 +255,7 @@ export async function getNaverKeywordInsights(
   ]);
 
   const failedSources: string[] = [];
+  const failures: NaverSourceFailure[] = [];
 
   function getSettledValue<T>(label: string, result: PromiseSettledResult<T>) {
     if (result.status === "fulfilled") {
@@ -229,6 +263,14 @@ export async function getNaverKeywordInsights(
     }
     console.error(`${label} Naver API failed`, result.reason);
     failedSources.push(label);
+    const reason = result.reason;
+    const detail =
+      reason instanceof NaverApiError
+        ? `${reason.status} ${reason.detail}`
+        : reason instanceof Error
+          ? reason.message
+          : "알 수 없는 오류";
+    failures.push({ label, detail });
     return null;
   }
 
@@ -242,9 +284,10 @@ export async function getNaverKeywordInsights(
     enabled: hasAnyData,
     warning:
       failedSources.length > 0
-        ? `네이버 API 일부 항목 수집에 실패했습니다: ${failedSources.join(", ")}. 수집된 데이터만 반영했습니다.`
+        ? `네이버 API 일부 항목 수집에 실패했습니다: ${failures.map((failure) => `${failure.label}(${failure.detail})`).join(", ")}. 수집된 데이터만 반영했습니다.`
         : undefined,
     failedSources,
+    failures,
     seedKeywords,
     search: { blog, cafe, local },
     trend,
@@ -292,7 +335,7 @@ export function formatNaverKeywordInsights(insights: NaverKeywordInsights) {
   const warning = insights.warning ? `> ${insights.warning}\n\n` : "";
   const status =
     insights.failedSources && insights.failedSources.length > 0
-      ? `### 수집 상태\n- 성공: ${["블로그", "카페글", "지역", "데이터랩"].filter((label) => !insights.failedSources?.includes(label)).join(", ") || "없음"}\n- 실패: ${insights.failedSources.join(", ")}\n\n`
+      ? `### 수집 상태\n- 성공: ${["블로그", "카페글", "지역", "데이터랩"].filter((label) => !insights.failedSources?.includes(label)).join(", ") || "없음"}\n- 실패: ${insights.failures?.map((failure) => `${failure.label}(${failure.detail})`).join(", ") || insights.failedSources.join(", ")}\n\n`
       : "### 수집 상태\n- 네이버 API 수집 완료\n\n";
 
   return `${warning}## 네이버 API 수집 데이터
